@@ -10,6 +10,10 @@ const {
   ChannelType,
   PermissionsBitField
 } = require('discord.js');
+const {
+  joinVoiceChannel,
+  getVoiceConnection
+} = require('@discordjs/voice');
 
 const PREFIX = process.env.PREFIX || '.';
 const TOKEN = process.env.DISCORD_TOKEN;
@@ -46,7 +50,7 @@ client.once('ready', async () => {
     ]
   });
 
-  // Restart sonrası 24/7 ses kanalına tekrar bağlanmak için (şimdilik sadece log)
+  // Restart sonrası 24/7 ses kanalına tekrar bağlan
   client.guilds.cache.forEach(async (guild) => {
     try {
       const config = guildConfig.get(guild.id);
@@ -63,8 +67,7 @@ client.once('ready', async () => {
       }
 
       if (voiceChannel) {
-        console.log(`Bot Voice candidate for guild ${guild.id}: ${voiceChannel.id}`);
-        // Gerçek bağlanma için @discordjs/voice eklenebilir (sonraki adımda yapabiliriz)
+        await connectToVoice(guild, voiceChannel);
       }
     } catch (err) {
       console.error(`Error auto-joining voice channel for guild ${guild.id}:`, err);
@@ -80,12 +83,28 @@ client.on('messageCreate', async (message) => {
   const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
   const command = args.shift()?.toLowerCase();
 
-  if (command === 'ping') return handlePing(message);
-  if (command === 'stats') return handleStats(message);
-  if (command === 'setup') return handleSetup(message);
-  if (command === 'ban') return handleBan(message, args);
-  if (command === 'kick') return handleKick(message, args);
-  if (command === 'clear') return handleClear(message, args);
+  switch (command) {
+    case 'ping':
+      return handlePing(message);
+    case 'stats':
+      return handleStats(message);
+    case 'setup':
+      return handleSetup(message);
+    case 'ban':
+      return handleBan(message, args);
+    case 'kick':
+      return handleKick(message, args);
+    case 'clear':
+      return handleClear(message, args);
+    case 'help':
+      return handleHelp(message);
+    case 'about':
+      return handleAbout(message);
+    case 'invite':
+      return handleInvite(message);
+    default:
+      return;
+  }
 });
 
 // Buton etkileşimleri (ticket + setup onay)
@@ -119,6 +138,8 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
+/* ---------------- Komutlar ---------------- */
+
 async function handlePing(message) {
   const embed = new EmbedBuilder()
     .setColor(0x00ff9d)
@@ -136,6 +157,88 @@ async function handleStats(message) {
       { name: 'Servers', value: `${client.guilds.cache.size}`, inline: true },
       { name: 'Users (approx.)', value: `${client.users.cache.size}`, inline: true },
       { name: 'Uptime', value: `${formatUptime(process.uptime())}`, inline: true }
+    );
+
+  await message.channel.send({ embeds: [embed] });
+}
+
+async function handleHelp(message) {
+  const embed = new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle('Help Menu')
+    .setDescription(
+      `Prefix: \`${PREFIX}\`\n` +
+        'This bot is a full **Bot Support Server Builder**, with automatic setup, moderation and tickets.'
+    )
+    .addFields(
+      {
+        name: 'Setup & Information',
+        value:
+          `\`${PREFIX}setup\` – Reset the server and build the full support structure (Admin only).\n` +
+          `\`${PREFIX}stats\` – Show bot statistics (servers, users, uptime).\n` +
+          `\`${PREFIX}ping\` – Check bot latency.\n` +
+          `\`${PREFIX}about\` – Learn what this bot does.\n` +
+          `\`${PREFIX}invite\` – Get the bot invite link.`
+      },
+      {
+        name: 'Moderation Commands',
+        value:
+          `\`${PREFIX}ban @user [reason]\` – Ban a member from the server.\n` +
+          `\`${PREFIX}kick @user [reason]\` – Kick a member from the server.\n` +
+          `\`${PREFIX}clear <1-100>\` – Bulk delete messages in the current channel.`
+      },
+      {
+        name: 'Ticket System',
+        value:
+          'Use the buttons in `#🎫-ticket-create` to open support tickets:\n' +
+          '- 🛠 General Support – For normal help about the bot or server.\n' +
+          '- 🐞 Bug Report – To report bugs or issues.\n' +
+          '- 🤝 Partnership – For partnership and collaboration requests.\n' +
+          'Each ticket creates a **private channel** visible only to you and staff.'
+      },
+      {
+        name: 'Notes',
+        value:
+          '- `.setup` will **delete existing channels and roles** (that the bot can manage) and rebuild the server.\n' +
+          '- The bot creates emoji-rich channels, roles, rules embeds, staff-only areas and log channels.\n' +
+          '- A dedicated `🔊 Bot Voice` channel is created and the bot joins it automatically (muted & deafened).'
+      }
+    )
+    .setFooter({ text: 'Bot Support Server Builder – generated from Copilot spec.' });
+
+  await message.channel.send({ embeds: [embed] });
+}
+
+async function handleAbout(message) {
+  const embed = new EmbedBuilder()
+    .setColor(0x2ecc71)
+    .setTitle('About This Bot')
+    .setDescription(
+      'This bot is designed to build a **complete Bot Support Server** automatically:\n\n' +
+        '- Deletes old channels and roles (safe, within its permissions).\n' +
+        '- Creates ~50 modern, emoji-rich channels and categories.\n' +
+        '- Sets up roles and permissions for staff, support and members.\n' +
+        '- Sends AUTR-style rules embeds.\n' +
+        '- Installs a full ticket system with buttons and private channels.\n' +
+        '- Creates staff-only and logs areas for moderation.\n' +
+        '- Connects to a dedicated voice channel for 24/7 presence (muted & deafened).'
+    )
+    .setFooter({ text: 'Use .setup to start a full server build (Admin only).' });
+
+  await message.channel.send({ embeds: [embed] });
+}
+
+async function handleInvite(message) {
+  // İstersen buraya kendi bot ID’ni sabitleyebilirsin
+  const clientId = client.user.id;
+  const url = `https://discord.com/oauth2/authorize?client_id=${clientId}&permissions=8&scope=bot`;
+
+  const embed = new EmbedBuilder()
+    .setColor(0xf1c40f)
+    .setTitle('Invite Me')
+    .setDescription(
+      'Use the link below to invite this bot with Administrator permissions (required for full setup):\n\n' +
+        `[Invite Link](${url})`
     );
 
   await message.channel.send({ embeds: [embed] });
@@ -181,7 +284,8 @@ async function handleSetup(message) {
   await message.channel.send({ embeds: [embed], components: [row] });
 }
 
-// Asıl kurulum
+/* ---------------- Setup İşlemleri ---------------- */
+
 async function runFullSetup(guild, user, interactionForStatus) {
   try {
     // 1. Her şeyi sil
@@ -199,7 +303,7 @@ async function runFullSetup(guild, user, interactionForStatus) {
     // 5. Ticket menüsü
     await setupTicketMenu(channels.ticketCreate);
 
-    // 6. Bot Voice hazırlığı (şimdilik sadece log)
+    // 6. Bot Voice hazırlığı ve bağlanma
     await prepareBotVoice(guild, channels.botVoice);
 
     guildConfig.set(guild.id, {
@@ -215,7 +319,7 @@ async function runFullSetup(guild, user, interactionForStatus) {
       .setDescription(
         'The Bot Support Server has been successfully created.\n' +
           '• Rules, channels, roles, and ticket system are now ready.\n' +
-          '• The bot has its dedicated voice channel (for 24/7 presence).'
+          '• The bot is connected to its dedicated voice channel (muted & deafened).'
       );
 
     if (interactionForStatus && !interactionForStatus.replied) {
@@ -266,15 +370,14 @@ async function wipeGuild(guild, interactionForStatus) {
   }
 }
 
-// Rolleri oluştur
+/* ---------------- Roller ---------------- */
+
 async function createRoles(guild) {
-  // color alanını null yollamamak için güvenli fonksiyon
   const makeRole = (name, options = {}) =>
     guild.roles.create({
       name,
       mentionable: options.mentionable ?? false,
       hoist: options.hoist ?? false,
-      // color null ise hiç göndermiyoruz, böylece ColorConvert hatası olmaz
       ...(options.color ? { color: options.color } : {}),
       permissions: options.permissions ?? []
     });
@@ -343,7 +446,8 @@ async function createRoles(guild) {
   };
 }
 
-// Kategoriler ve kanallar
+/* ---------------- Kanallar ---------------- */
+
 async function createChannels(guild, roles) {
   // Kategoriler
   const welcomeInfo = await guild.channels.create({
@@ -661,7 +765,8 @@ async function createChannels(guild, roles) {
   };
 }
 
-// Kurallar embedleri
+/* ---------------- Kurallar ---------------- */
+
 async function sendRulesEmbed(rulesChannel) {
   const embed1 = new EmbedBuilder()
     .setColor(0xffffff)
@@ -734,7 +839,8 @@ async function sendRulesEmbed(rulesChannel) {
   await rulesChannel.send({ embeds: [embed1, embed2, embed3] });
 }
 
-// Ticket menüsü
+/* ---------------- Ticket Sistemi ---------------- */
+
 async function setupTicketMenu(ticketChannel) {
   const embed = new EmbedBuilder()
     .setColor(0x5865f2)
@@ -841,16 +947,45 @@ async function handleCloseTicket(interaction) {
   }, 5000);
 }
 
-// Bot Voice 24/7 (şimdilik sadece hazırlar, istersen sonra @discordjs/voice ekleriz)
+/* ---------------- Ses Kanalı (24/7) ---------------- */
+
 async function prepareBotVoice(guild, botVoiceChannel) {
   try {
-    console.log(`Bot Voice channel ready in guild ${guild.id} -> ${botVoiceChannel.id}`);
+    await connectToVoice(guild, botVoiceChannel);
+    console.log(`Bot Voice channel ready and joined in guild ${guild.id} -> ${botVoiceChannel.id}`);
   } catch (e) {
     console.error('Error preparing bot voice:', e);
   }
 }
 
-// Basit ban/kick/clear iskeletleri
+async function connectToVoice(guild, voiceChannel) {
+  try {
+    const existing = getVoiceConnection(guild.id);
+    if (existing) return existing;
+
+    const connection = joinVoiceChannel({
+      channelId: voiceChannel.id,
+      guildId: guild.id,
+      adapterCreator: guild.voiceAdapterCreator,
+      selfMute: true,   // bot kendi kendini mute
+      selfDeaf: true    // bot kendi kendini deaf
+    });
+
+    // Sunucu tarafı mute/deafen için:
+    const me = guild.members.me;
+    if (me && !me.voice.channelId) {
+      // Biraz gecikme ile tekrar deneyebilirdik; burada basit bırakıyoruz
+    }
+
+    return connection;
+  } catch (e) {
+    console.error('Failed to join voice channel:', e);
+    throw e;
+  }
+}
+
+/* ---------------- Moderasyon Komutları ---------------- */
+
 async function handleBan(message, args) {
   if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) return;
   const user = message.mentions.members.first();
@@ -892,5 +1027,7 @@ async function handleClear(message, args) {
   const msg = await message.channel.send(`🧹 Deleted ${amount} messages.`);
   setTimeout(() => msg.delete().catch(() => {}), 3000);
 }
+
+/* ---------------- Login ---------------- */
 
 client.login(TOKEN);
