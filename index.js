@@ -46,7 +46,7 @@ client.once('ready', async () => {
     ]
   });
 
-  // Restart sonrası 24/7 ses kanalına tekrar bağlanmak için (mümkünse isimden buluyoruz)
+  // Restart sonrası 24/7 ses kanalına tekrar bağlanmak için (şimdilik sadece log)
   client.guilds.cache.forEach(async (guild) => {
     try {
       const config = guildConfig.get(guild.id);
@@ -62,10 +62,9 @@ client.once('ready', async () => {
         );
       }
 
-      if (voiceChannel && voiceChannel.joinable) {
-        const connection = await voiceChannel.join?.(); // discord.js v12 kalıntısı; v14 için voice lib gerekir
-        // Not: Modern discord.js’de @discordjs/voice kullanmak daha doğru
-        // Burada sadece konsept veriyoruz; detay için ayrı adımda geliştirebiliriz.
+      if (voiceChannel) {
+        console.log(`Bot Voice candidate for guild ${guild.id}: ${voiceChannel.id}`);
+        // Gerçek bağlanma için @discordjs/voice eklenebilir (sonraki adımda yapabiliriz)
       }
     } catch (err) {
       console.error(`Error auto-joining voice channel for guild ${guild.id}:`, err);
@@ -87,14 +86,13 @@ client.on('messageCreate', async (message) => {
   if (command === 'ban') return handleBan(message, args);
   if (command === 'kick') return handleKick(message, args);
   if (command === 'clear') return handleClear(message, args);
-  // mute/unmute/warn gibi komutları iskelet olarak ekleyebilirsin
 });
 
 // Buton etkileşimleri (ticket + setup onay)
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
 
-  const [key, sub, extra] = interaction.customId.split(':');
+  const [key, sub] = interaction.customId.split(':');
 
   // Setup onay
   if (key === 'setup-confirm') {
@@ -201,7 +199,7 @@ async function runFullSetup(guild, user, interactionForStatus) {
     // 5. Ticket menüsü
     await setupTicketMenu(channels.ticketCreate);
 
-    // 6. Bot Voice’a bağlan (24/7 presence)
+    // 6. Bot Voice hazırlığı (şimdilik sadece log)
     await prepareBotVoice(guild, channels.botVoice);
 
     guildConfig.set(guild.id, {
@@ -217,7 +215,7 @@ async function runFullSetup(guild, user, interactionForStatus) {
       .setDescription(
         'The Bot Support Server has been successfully created.\n' +
           '• Rules, channels, roles, and ticket system are now ready.\n' +
-          '• The bot is connected to its dedicated voice channel (muted & deafened).'
+          '• The bot has its dedicated voice channel (for 24/7 presence).'
       );
 
     if (interactionForStatus && !interactionForStatus.replied) {
@@ -238,7 +236,6 @@ async function runFullSetup(guild, user, interactionForStatus) {
 }
 
 async function wipeGuild(guild, interactionForStatus) {
-  // Rolleri ve kanalları sil
   const statusMsg = async (text) => {
     if (!interactionForStatus) return;
     try {
@@ -271,12 +268,14 @@ async function wipeGuild(guild, interactionForStatus) {
 
 // Rolleri oluştur
 async function createRoles(guild) {
+  // color alanını null yollamamak için güvenli fonksiyon
   const makeRole = (name, options = {}) =>
     guild.roles.create({
       name,
       mentionable: options.mentionable ?? false,
       hoist: options.hoist ?? false,
-      color: options.color ?? null,
+      // color null ise hiç göndermiyoruz, böylece ColorConvert hatası olmaz
+      ...(options.color ? { color: options.color } : {}),
       permissions: options.permissions ?? []
     });
 
@@ -842,13 +841,9 @@ async function handleCloseTicket(interaction) {
   }, 5000);
 }
 
-// Bot Voice 24/7 (konsept)
+// Bot Voice 24/7 (şimdilik sadece hazırlar, istersen sonra @discordjs/voice ekleriz)
 async function prepareBotVoice(guild, botVoiceChannel) {
   try {
-    // Modern discord.js ile gerçekten ses kanalına bağlanmak için
-    // @discordjs/voice paketi kullanmak gerekir.
-    // Burada sadece kanalın varlığını garanti ediyoruz.
-    // İstersen sonraki adımda tam 24/7 voice bağlantısını da ekleyelim.
     console.log(`Bot Voice channel ready in guild ${guild.id} -> ${botVoiceChannel.id}`);
   } catch (e) {
     console.error('Error preparing bot voice:', e);
